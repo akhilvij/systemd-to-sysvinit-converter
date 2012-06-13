@@ -2,7 +2,7 @@ This software is part of the Debian project "SysV-init file creator from systemd
 
 Installation
 ============
-This is a simple script. There is not separate requirement for installation.
+This is a simple script. There is no need for installation.
 
 Usage
 =====
