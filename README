@@ -1,0 +1,10 @@
+This software is part of the Debian project "SysV-init file creator from systemd service files" as part of Google Summer of Code 2012.
+
+Installation
+============
+This is a simple script. There is not separate requirement for installation.
+
+Usage
+=====
+It takes the location of a systemd configuration file as argument.
+python converter.py /location/of/systemd/conf_file
