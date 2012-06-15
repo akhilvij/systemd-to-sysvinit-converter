@@ -5,6 +5,7 @@ config = ConfigParser.ConfigParser()
 
 if len(sys.argv) > 1:
 	config.read(sys.argv[1])
+	prog = (sys.argv[1].split('/')[-1]).split('.')[0]
 else:
 	print "Usage: python code.py /location/of/systemd/conf_file"
 
@@ -43,6 +44,8 @@ def add_required_service():
 				required_str = required_str + "$syslog "
 			elif service == "remote-fs.target":
 				required_str = required_str + "$remote_fs "
+			elif service == "network.target":
+				required_str = required_str + "$network "
 			else:
 				break
 			
@@ -68,7 +71,7 @@ def build_LSB_header(): #add more arguments here
 	print "### END INIT INFO"
 
 def build_start():
-	print "start() {"
+	print "start() {\necho -n \"Starting $prog: \""
 # Call functions here to check for ExecStartPre, post and all other options
 	if check_for("Service","ExecStartPre"):
 		print config.get("Service", "ExecStartPre")
@@ -81,7 +84,7 @@ def build_start():
 	print "}\n"
 
 def build_stop():
-	print "stop() {"
+	print "stop() {\necho -n \"Stopping $prog: \""
 # Call functions here to check for options
 	print config.get("Service", "ExecStop")
 	
@@ -91,9 +94,18 @@ def build_stop():
 	print "}\n"
 	
 def build_reload():
-	print "reload () {"
+	print "reload () {\necho -n \"Reloading $prog: \""
 	print config.get("Service", "ExecReload")
 	print "}\n"
+
+# For environment, PID, run files etc.
+def build_default_params():
+	print "\nset -e\n"
+	check_env_file(config.get("Service","EnvironmentFile"));
+	print "prog=" + prog
+	if check_for("Service", "PIDFile"):
+		print "pidfile=${PIDFILE-" + config.get("Service", "PIDFile")
+	print
 
 # Similarly we would have build_restart(), build_reload(), build_status() and so on...
 
@@ -101,9 +113,8 @@ for section in config.sections():
 		if section == "Unit":
 			build_LSB_header();
 
-		if section == "Service":
-			print "\nset -e\n"
-			check_env_file(config.get(section,"EnvironmentFile"));
+		if section == "Service":		
+			build_default_params()
 			for option in config.options(section):
 				if option == "execstart":
 					build_start()
