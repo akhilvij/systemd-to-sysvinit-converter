@@ -125,41 +125,80 @@ def build_LSB_header(): #add more arguments here
 # Call functions here for Provides, Required-Start, Required-Stop,
 # Default-Start, Default-Stop, Short-Description and Description. Don't know
 # whether we can get all the info for this from the "Unit" Section alone.
-
 	add_description()
 	add_required_service()
 	add_should_service()
 	add_runlevels()
 	print "### END INIT INFO"
 
+# This functions is used to check the return value of every command executed
+# in the init script. The syntax is simple.
+# Usage:	
+# 	bash_check_for_success("start")
+# This means that the command in concern was execute during script's start()
+# action. In this way, this functions knows what error message to print
+
+def bash_check_for_success(action):
+	print "\tif [ $? -ne 0 ]; then"
+	print "\t\techo \"Unable to " + action + " $prog\"\n\t\texit 1"
+	print "\tfi"
+	
+
 def build_start():
-	print "start() {\necho -n \"Starting $prog: \""
+	print "start() {\n\techo -n \"Starting $prog: \""
 
 	if check_for("Service", "ExecStartPre"):
-		print config.get("Service", "ExecStartPre")
+		start_pre_list = config.get("Service", "ExecStartPre").split(';')
+		for start_pre in start_pre_list:
+			print "\tstart_daemon " + start_pre
+			bash_check_for_success("start")
 		
 	if check_for("Service", "ExecStart"):
-		print config.get("Service", "ExecStart")
+		exec_start = config.get("Service", "ExecStart")
+		if check_for("Service", "PIDFile"):
+			print "\tstart_daemon " + "-p $PIDFILE " + exec_start
+		else:
+			print "\tstart_daemon " + exec_start
+		bash_check_for_success("start")
 
 	if check_for("Service", "ExecStartPost"):
-		print config.get("Service", "ExecStartPost")
+		start_post_list = config.get("Service", "ExecStartPost")
+		for start_post in start_post_list:
+			print "\tstart_daemon " + start_post
+			bash_check_for_success("start")
 
 	print "}\n"
 
 def build_stop():
-	print "stop() {\necho -n \"Stopping $prog: \""
+	print "stop() {\n\techo -n \"Stopping $prog: \""
 
 	if check_for("Service", "ExecStop"):
-		print config.get("Service", "ExecStop")
+		print "\t", config.get("Service", "ExecStop")
+	
+	else:
+		if check_for("Service", "ExecStart"):
+			prog_path = config.get("Service", "ExecStart").split(" ")[0]
+		if check_for("Service", "PIDFile"):
+			if check_for("Service", "KillMode"):
+				print "\tkillproc -p $PIDFILE ", prog_path \
+					+ " ", config.get("Service", "KillMode")
+			else:
+				print "\tkillproc -p $PIDFILE ", prog_path
+		else:
+			if check_for("Service", "KillMode"):
+				print "\tkillproc ", prog_path, " ", config.get("Service",
+																"KillMode")
+			print "\tkillproc " + prog_path
+		bash_check_for_success("stop")
 
-	if check_for("Service", "ExecStopPost"):
-		print config.get("Service", "ExecStopPost")	
+	if check_for("Service", "ExecStartPost"):
+		print "\t", config.get("Service", "ExecStartPost")
 	print "}\n"
 	
 def build_reload():
-	print "reload () {\necho -n \"Reloading $prog: \""
+	print "reload () {\n\techo -n \"Reloading $prog: \""
 	if check_for("Service", "ExecReload"):
-		print config.get("Service", "ExecReload")
+		print "\t", config.get("Service", "ExecReload")
 	print "}\n"
 
 def build_default_params():
@@ -171,7 +210,10 @@ def build_default_params():
 		check_env_file(config.get("Service", "EnvironmentFile"));
 
 	if check_for("Service", "PIDFile"):
-		print "pidfile=${PIDFILE-" + config.get("Service", "PIDFile")
+		print "PIDFILE=${PIDFILE-" + config.get("Service", "PIDFile")
+	
+	if check_for("Service", "KillMode"):
+		print "SIG=" + config.get("Service", "KillMode")
 
 	print
 
