@@ -130,22 +130,25 @@ def build_LSB_header(): #add more arguments here
 	add_should_service()
 	add_runlevels()
 	print "### END INIT INFO"
+	
+""" This functions is used to check the return value of every command executed
+in the init script. The syntax is simple.
+Usage:	
+	bash_check_for_success("start", return_value)
+This means that the command in concern was execute during script's start()
+action. In this way, this functions knows what error message to print and
+what value to return to signify success or failure.
 
-# This functions is used to check the return value of every command executed
-# in the init script. The syntax is simple.
-# Usage:	
-# 	bash_check_for_success("start")
-# This means that the command in concern was execute during script's start()
-# action. In this way, this functions knows what error message to print
+"""
 
-def bash_check_for_success(action):
+def bash_check_for_success(action, r_val=1):
 	print "\tif [ $? -ne 0 ]; then"
-	print "\t\techo \"Unable to " + action + " $prog\"\n\t\texit 1"
+	print "\t\techo \"Unable to " + action + " $prog\"\n\t\texit " + str(r_val)
 	print "\tfi"
 	
 
 def build_start():
-	print "start() {\n\techo -n \"Starting $prog: \""
+	print "start() {\n\techo - n \"Starting $prog: \""
 
 	if check_for("Service", "ExecStartPre"):
 		start_pre_list = config.get("Service", "ExecStartPre").split(';')
@@ -176,8 +179,8 @@ def build_stop():
 		print "\t", config.get("Service", "ExecStop")
 	
 	else:
-		if check_for("Service", "ExecStart"):
-			prog_path = config.get("Service", "ExecStart").split(" ")[0]
+		if check_for("Service", "ExecStop"):
+			prog_path = config.get("Service", "ExecStop").split(" ")[0]
 		if check_for("Service", "PIDFile"):
 			if check_for("Service", "KillMode"):
 				print "\tkillproc -p $PIDFILE ", prog_path \
@@ -195,10 +198,31 @@ def build_stop():
 		print "\t", config.get("Service", "ExecStartPost")
 	print "}\n"
 	
+""" This functions generates the reload() bash function. Here is how it works:
+ - If ExecReload statement already exists then it'll be executed.
+ - If there is no ExecReload then we need to find the service's PID. For that,
+ the function checks for pidfile and call "pidofproc -p $PIDFILE" else 
+ it'll find the service's executable through	ExecStart and execute 
+ 	"pidofproc /path/to/executable" 
+
+"""
+
 def build_reload():
 	print "reload () {\n\techo -n \"Reloading $prog: \""
 	if check_for("Service", "ExecReload"):
 		print "\t", config.get("Service", "ExecReload")
+		
+	else:
+		if check_for("Service", "PIDFile"):
+			print "\tPID = pidofproc -p $PIDFILE"
+		elif check_for("Service", "ExecStart"):
+			exec_path = config.get("Service", "ExecStart").split(" ")[0]
+			print "\tPID = pidofproc ", exec_path
+		else:
+			print "}\n"
+		print "\tif [ $PID -eq 1 -o $PID -eq 2 -o $PID -eq 3 ] then"
+		print "\t\techo \"Unable to Reload - Service is not running\"" 
+		print "\tkill -HUP $PID"
 	print "}\n"
 
 def build_default_params():
@@ -226,7 +250,6 @@ def build_call_arguments():
 	print "\trestart)\n\t\tstop\n\tstart\n\t\t;;"
 	print "\t* )\n\t\techo $\"Usage: $prog {start|stop|reload|restart|status}\""
 	print "esac\n"
-
 
 for section in config.sections():
 #	print section
