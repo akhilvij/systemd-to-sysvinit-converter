@@ -2,20 +2,24 @@
 import ConfigParser
 import sys
 
-config = ConfigParser.ConfigParser()
-
-if len(sys.argv) > 1:
-	config.read(sys.argv[1])
-	prog = (sys.argv[1].split('/')[-1]).split('.')[0]
-else:
-	print "Usage: python code.py /location/of/systemd/conf_file"
+def parser_init():
+	global config
+	config = ConfigParser.ConfigParser()
+	if len(sys.argv) > 1:
+		if not config.read(sys.argv[1]):
+			print "Unable to parse file", sys.argv[1]
+			return;
+		global prog
+		prog = (sys.argv[1].split('/')[-1]).split('.')[0]
+	else:
+		print "Usage: python code.py /location/of/systemd/conf_file"
 
 def add_description():
-	if check_for("Unit", "Description"):
+	if config.has_option("Unit", "Description"):
 		print "Short-Description: " + config.get("Unit", "Description")
 
 def add_runlevels():
-	if check_for("Install", "WantedBy"):
+	if config.has_option("Install", "WantedBy"):
 			runlevel = config.get("Install", "WantedBy")
 			if runlevel == "multi-user.target":
 				print "Default-Start:\t2 3 4"
@@ -52,7 +56,7 @@ def add_required_service():
 	options = ['After', 'Requires']
 
 	for option in options:
-		if check_for("Unit", option):
+		if config.has_option("Unit", option):
 			after_services_str = config.get("Unit", option)
 			for unit in after_services_str.split(" "):
 				if unit == "syslog.target" and syslog_flag:
@@ -86,7 +90,7 @@ def add_should_service():
 	rpcbind_flag = True
 	options = ['Wants']
 	for option in options:
-		if check_for("Unit", option):
+		if config.has_option("Unit", option):
 			after_services_str = config.get("Unit", option)
 			for unit in after_services_str.split(" "):
 				if unit == "syslog.target" and syslog_flag:
@@ -113,12 +117,6 @@ def add_should_service():
 def check_env_file(Environment_file):
 	print "if test -f " + Environment_file + "; then\n\t. " + Environment_file + "\nfi\n"
 															
-def check_for(service, option):
-	try:
-		config.get(service, option)
-		return 1
-	except:
-		return 0
 
 def build_LSB_header(): #add more arguments here
 	print "### BEGIN INIT INFO"
@@ -150,21 +148,21 @@ def bash_check_for_success(action, r_val=1):
 def build_start():
 	print "start() {\n\techo - n \"Starting $prog: \""
 
-	if check_for("Service", "ExecStartPre"):
+	if config.has_option("Service", "ExecStartPre"):
 		start_pre_list = config.get("Service", "ExecStartPre").split(';')
 		for start_pre in start_pre_list:
 			print "\tstart_daemon " + start_pre
 			bash_check_for_success("start")
 		
-	if check_for("Service", "ExecStart"):
+	if config.has_option("Service", "ExecStart"):
 		exec_start = config.get("Service", "ExecStart")
-		if check_for("Service", "PIDFile"):
+		if config.has_option("Service", "PIDFile"):
 			print "\tstart_daemon " + "-p $PIDFILE " + exec_start
 		else:
 			print "\tstart_daemon " + exec_start
 		bash_check_for_success("start")
 
-	if check_for("Service", "ExecStartPost"):
+	if config.has_option("Service", "ExecStartPost"):
 		start_post_list = config.get("Service", "ExecStartPost")
 		for start_post in start_post_list:
 			print "\tstart_daemon " + start_post
@@ -172,50 +170,63 @@ def build_start():
 
 	print "}\n"
 
+'''
+The behaviour of build_stop is based on the option "killmode"
+	=> control-group - This is the default. In this case, the ExecStop is
+	executed first and then rest of the processes are killed.
+	=> process - Only the main process is killed.
+	=> none - The ExecStop command is run and no process is killed.
+	
+	Since, we don't have the concept of control group in sysV, we simply run
+	ExecStop and kill all the remaining processes. The signal for killing is
+	derived from "KillSignal" option.
+
+'''
+
 def build_stop():
 	print "stop() {\n\techo -n \"Stopping $prog: \""
-
-	if check_for("Service", "ExecStop"):
+	
+	if config.has_option("Service", "ExecStop"):
 		print "\t", config.get("Service", "ExecStop")
 	
 	else:
-		if check_for("Service", "ExecStop"):
-			prog_path = config.get("Service", "ExecStop").split(" ")[0]
-		if check_for("Service", "PIDFile"):
-			if check_for("Service", "KillMode"):
-				print "\tkillproc -p $PIDFILE ", prog_path \
-					+ " ", config.get("Service", "KillMode")
+		if config.has_option("Service", "ExecStart"):
+			prog_path = config.get("Service", "ExecStart").split(" ")[0]
+		if config.has_option("Service", "PIDFile"):
+			if config.has_option("Service", "KillSignal"):
+				print "\tkillproc -p $PIDFILE -s",
+				print config.get("Service", "KillSignal"), prog_path
 			else:
 				print "\tkillproc -p $PIDFILE ", prog_path
 		else:
-			if check_for("Service", "KillMode"):
-				print "\tkillproc ", prog_path, " ", config.get("Service",
-																"KillMode")
-			print "\tkillproc " + prog_path
+			if config.has_option("Service", "KillSignal"):
+				print "\tkillproc -s", config.get("Service", "KillSignal"),
+				print prog_path
 		bash_check_for_success("stop")
 
-	if check_for("Service", "ExecStartPost"):
+	if config.has_option("Service", "ExecStartPost"):
 		print "\t", config.get("Service", "ExecStartPost")
 	print "}\n"
 	
 """ This functions generates the reload() bash function. Here is how it works:
- - If ExecReload statement already exists then it'll be executed.
- - If there is no ExecReload then we need to find the service's PID. For that,
- the function checks for pidfile and call "pidofproc -p $PIDFILE" else 
- it'll find the service's executable through	ExecStart and execute 
- 	"pidofproc /path/to/executable" 
+	- If ExecReload statement already exists then it'll be executed.
+	- If there is no ExecReload then we need to find the service's PID. For 
+	that, the function checks for pidfile and call "pidofproc -p $PIDFILE" 
+	else it'll find the service's executable through ExecStart and execute 
+	"pidofproc /path/to/executable". Since, ExecStart is mandatory for every
+	service, obtaining path is easy and reliable.
 
 """
 
 def build_reload():
 	print "reload () {\n\techo -n \"Reloading $prog: \""
-	if check_for("Service", "ExecReload"):
+	if config.has_option("Service", "ExecReload"):
 		print "\t", config.get("Service", "ExecReload")
 		
 	else:
-		if check_for("Service", "PIDFile"):
+		if config.has_option("Service", "PIDFile"):
 			print "\tPID = pidofproc -p $PIDFILE"
-		elif check_for("Service", "ExecStart"):
+		elif config.has_option("Service", "ExecStart"):
 			exec_path = config.get("Service", "ExecStart").split(" ")[0]
 			print "\tPID = pidofproc ", exec_path
 		else:
@@ -230,13 +241,13 @@ def build_default_params():
 	print "\n. /lib/lsb/init-functions\n"
 	print "prog=" + prog
 
-	if check_for("Service", "EnvironmentFile"):
+	if config.has_option("Service", "EnvironmentFile"):
 		check_env_file(config.get("Service", "EnvironmentFile"));
 
-	if check_for("Service", "PIDFile"):
+	if config.has_option("Service", "PIDFile"):
 		print "PIDFILE=${PIDFILE-" + config.get("Service", "PIDFile")
 	
-	if check_for("Service", "KillMode"):
+	if config.has_option("Service", "KillMode"):
 		print "SIG=" + config.get("Service", "KillMode")
 
 	print
@@ -251,17 +262,13 @@ def build_call_arguments():
 	print "\t* )\n\t\techo $\"Usage: $prog {start|stop|reload|restart|status}\""
 	print "esac\n"
 
-for section in config.sections():
-#	print section
-	if  section == "Unit" :
-		build_LSB_header();
-	if  section == "Service" :
-		build_default_params()
-
 # The build_{start,stop,reload} functions will be called irrespective of the
 # existence of Exec{Start,Stop,Reload} options. This is to ensure that all the
 # basic call exists(even if they have no operation).
 
+parser_init()
+build_LSB_header()
+build_default_params()
 build_start()
 build_stop()
 build_reload()
