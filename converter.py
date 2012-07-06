@@ -43,7 +43,8 @@ def add_runlevels():
 				return 5
 
 # Not sure about basic.target & rescue.target : 
-# check once - https://fedoraproject.org/wiki/User:Johannbg/QA/Systemd/Systemd.special
+# check once - 
+# https://fedoraproject.org/wiki/User:Johannbg/QA/Systemd/Systemd.special
 
 			elif runlevel == "basic.target":
 				print "Default-Start:\t1"
@@ -126,7 +127,8 @@ def add_should_service():
 	print should_str
 
 def check_env_file(Environment_file):
-	print "if test -f " + Environment_file + "; then\n\t. " + Environment_file + "\nfi\n"
+	print "if test -f", Environment_file, "; then\n\t.", Environment_file,
+	print "\nfi\n"
 															
 
 def build_LSB_header(): #add more arguments here
@@ -140,13 +142,31 @@ def build_LSB_header(): #add more arguments here
 	add_runlevels()
 	print "### END INIT INFO"
 	
-""" This functions is used to check the return value of every command executed
-in the init script. The syntax is simple.
-Usage:	
-	bash_check_for_success("start", return_value)
-This means that the command in concern was executed during script's start()
-action. In this way, this functions knows what error message to print and
-what value to return to signify success or failure.
+'''
+	Function: clear_dash_prefix(string)
+	--------------------------------------
+	removes the '-' prefix from the argument.
+	
+		str: string which needs the cleanup
+		
+	Returns: Returns the string after removing the string.
+	
+'''
+def clear_dash_prefix(exec_str):
+	if exec_str[0] == '-':
+		return exec_str[1:len(exec_str)]
+	return exec_str
+	
+""" 
+	Function: bash_check_for_success(action, return_value = 1)
+	----------------------------------------------------------
+	This functions is used to check the return value of every command executed
+	in the init script. The syntax is simple.
+		
+		action: start, stop etc.
+		return_val: The value used for "exit" when the check fails.
+		
+	returns: It simply prints a few statements to STDOUT. No return value.
 
 """
 
@@ -172,7 +192,8 @@ def timeout(action):
 			bash_check_for_success(action)
 		else:
 			if config.has_option("Service", "ExecStart"):
-				prog_path = config.get("Service", "ExecStart")[0].split(" ")[0]
+				prog_path = config.get("Service",
+									"ExecStart")[0].split(" ")[0]
 			print "\tTIMEOUT = $STARTTIMEOUT"
 			print "\tTEMPPID = pidofproc", prog_path
 			print "\twhile [ TIMEOUT -gt 0 ]; do"
@@ -214,28 +235,42 @@ def build_start():
 	print "start() {\n\techo - n \"Starting $prog: \""
 
 	if config.has_option("Service", "ExecStartPre"):
-		start_pre_list = config.get("Service", "ExecStartPre")[0].split(';')
+		if len(config.get("Service", "ExecStartPre")) == 1:
+			start_pre_list = config.get("Service",
+									"ExecStartPre")[0].split(';')
+		else:
+			start_pre_list = config.get("Service", "ExecStartPre")
 		for start_pre in start_pre_list:
-			print "\tstart_daemon " + start_pre
+			print "\tstart_daemon", clear_dash_prefix(start_pre)
 			if start_pre[0] != "-":
 				bash_check_for_success("start")
 		
 	if config.has_option("Service", "ExecStart"):
-		exec_start = config.get("Service", "ExecStart")[0]
-		if config.has_option("Service", "PIDFile"):
-			print "\tstart_daemon " + "-p $PIDFILE " + exec_start
-		else:
-			print "\tstart_daemon " + exec_start
-			
+		start_list = config.get("Service", "ExecStart")
+		if config.has_option("Service", "Type"):
+			if config.get("Service", "Type")[0].lower() == "oneshot":
+				if len(config.get("Service", "ExecStart")) == 1:
+					start_list = config.get("Service",
+										"ExecStart")[0].split(';')
+		for exec_start in start_list:
+			if config.has_option("Service", "PIDFile"):
+				print "\tstart_daemon " + "-p $PIDFILE",
+				print clear_dash_prefix(exec_start)
+			else:
+				print "\tstart_daemon " + clear_dash_prefix(exec_start)
+		
 		timeout("start")
 			
 	if config.has_option("Service", "ExecStartPost"):
-		start_post_list = config.get("Service", "ExecStartPost")[0].split(';')
+		if len(config.get("Service", "ExecStartPost")) == 1:
+			start_post_list = config.get("Service",
+									"ExecStartPost")[0].split(';')
+		else:
+			start_post_list = config.get("Service", "ExecStartPost")
 		for start_post in start_post_list:
-			print "\tstart_daemon " + start_post
+			print "\tstart_daemon", clear_dash_prefix(start_post)
 			if start_post[0] != "-":
 				bash_check_for_success("start")
-
 	print "}\n"
 
 '''
@@ -255,7 +290,13 @@ def build_stop():
 	print "stop() {\n\techo -n \"Stopping $prog: \""
 	
 	if config.has_option("Service", "ExecStop"):
-		print "\t", config.get("Service", "ExecStop")[0]
+		if len(config.get("Service", "ExecStop")) == 1:
+			stop_list = config.get("Service",
+									"ExecStop")[0].split(';')
+		else:
+			stop_list = config.get("Service", "ExecStop")
+		for exec_stop in stop_list:
+			print "\t", clear_dash_prefix(exec_stop)
 		timeout("stop")
 		
 	else:
@@ -275,9 +316,13 @@ def build_stop():
 		timeout("stop")
 
 	if config.has_option("Service", "ExecStopPost"):
-		stop_post_list = config.get("Service", "ExecStopPost")[0].split(';')
+		if len(config.get("Service", "ExecStopPost")) == 1:
+			stop_post_list = config.get("Service",
+									"ExecStopPost")[0].split(';')
+		else:
+			stop_post_list = config.get("Service", "ExecStopPost")
 		for stop_post in stop_post_list:
-			print "\t", stop_post
+			print "\t", clear_dash_prefix(stop_post)
 			if stop_post[0] != "-":
 				bash_check_for_success("stop")
 	print "}\n"
@@ -339,7 +384,8 @@ def build_call_arguments():
 	print "\tstop)\n\t\tstop\n\t\t;;"
 	print "\treload)\n\t\treload\n\t\t;;"
 	print "\trestart)\n\t\tstop\n\tstart\n\t\t;;"
-	print "\t* )\n\t\techo $\"Usage: $prog {start|stop|reload|restart|status}\""
+	print "\t* )\n\t\techo $\"Usage: $prog",
+	print "{start|stop|reload|restart|status}\""
 	print "esac\n"
 
 # The build_{start,stop,reload} functions will be called irrespective of the
