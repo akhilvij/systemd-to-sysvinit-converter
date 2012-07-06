@@ -133,7 +133,7 @@ def build_LSB_header(): #add more arguments here
 in the init script. The syntax is simple.
 Usage:	
 	bash_check_for_success("start", return_value)
-This means that the command in concern was execute during script's start()
+This means that the command in concern was executed during script's start()
 action. In this way, this functions knows what error message to print and
 what value to return to signify success or failure.
 
@@ -144,6 +144,38 @@ def bash_check_for_success(action, r_val=1):
 	print "\t\techo \"Unable to " + action + " $prog\"\n\t\texit " + str(r_val)
 	print "\tfi"
 	
+'''
+	Function: timeout(prog_path, action)
+	------------------------------------
+	checks whether the "action" performed is completed in a given timeout period.
+	
+		prog_path: path of the daemon's executable
+		action: start, stop etc.
+	
+	returns: It simply prints a few statements to STDOUT. No return value.
+'''	
+	
+def timeout(prog_path, action):
+	if config.has_option("Service", "TimeoutSec"):
+		if config.get("Service", "TimeoutSec")	 == "0":
+			bash_check_for_success(action)
+		else:
+			print "\tTIMEOUT = $STARTTIMEOUT"
+			print "\twhile [ TIMEOUT -gt 0 ]; do"
+			if action == "start":
+				print "\t\tif ! /bin/kill -0", prog_path, "; then"
+				print "\t\t\techo $prog started successfully\""
+			elif action == "stop":
+				print "\t\tif /bin/kill -0", prog_path, "; then"
+				print "\t\t\techo $prog stopped successfully\""
+			print "\t\t\tbreak"
+			print "\t\tfi"
+			print "\t\tsleep 1"
+			print "\t\tlet TIMEOUT=${TIMEOUT} - 1"
+			print "\tdone\n"
+			print "\tif [ $TIMEOUT -eq 0 ]; then"
+			print "\t\techo \"Timeout error occured trying to start $prog\""
+			print "\tfi"
 
 def build_start():
 	print "start() {\n\techo - n \"Starting $prog: \""
@@ -152,21 +184,29 @@ def build_start():
 		start_pre_list = config.get("Service", "ExecStartPre").split(';')
 		for start_pre in start_pre_list:
 			print "\tstart_daemon " + start_pre
-			bash_check_for_success("start")
+			if start_pre[0] != "-":
+				bash_check_for_success("start")
 		
 	if config.has_option("Service", "ExecStart"):
 		exec_start = config.get("Service", "ExecStart")
+		prog_path = config.get("Service", "ExecStart").split(" ")[0]
 		if config.has_option("Service", "PIDFile"):
 			print "\tstart_daemon " + "-p $PIDFILE " + exec_start
 		else:
 			print "\tstart_daemon " + exec_start
-		bash_check_for_success("start")
-
+			
+		if config.has_option("Service", "TimeoutSec"):
+			if config.get("Service", "TimeoutSec")	 == "0":
+				bash_check_for_success("start")
+			else:
+				timeout(prog_path, "start")
+			
 	if config.has_option("Service", "ExecStartPost"):
-		start_post_list = config.get("Service", "ExecStartPost")
+		start_post_list = config.get("Service", "ExecStartPost").split(';')
 		for start_post in start_post_list:
 			print "\tstart_daemon " + start_post
-			bash_check_for_success("start")
+			if start_post[0] != "-":
+				bash_check_for_success("start")
 
 	print "}\n"
 
@@ -188,7 +228,7 @@ def build_stop():
 	
 	if config.has_option("Service", "ExecStop"):
 		print "\t", config.get("Service", "ExecStop")
-	
+		
 	else:
 		if config.has_option("Service", "ExecStart"):
 			prog_path = config.get("Service", "ExecStart").split(" ")[0]
@@ -204,11 +244,16 @@ def build_stop():
 				print prog_path
 		bash_check_for_success("stop")
 
-	if config.has_option("Service", "ExecStartPost"):
-		print "\t", config.get("Service", "ExecStartPost")
+	if config.has_option("Service", "ExecStopPost"):
+		stop_post_list = config.get("Service", "ExecStopPost").split(';')
+		for stop_post in stop_post_list:
+			print "\t", stop_post
+			if stop_post[0] != "-":
+				bash_check_for_success("stop")
 	print "}\n"
 	
-""" This functions generates the reload() bash function. Here is how it works:
+""" 
+	This functions generates the reload() bash function. Here is how it works:
 	- If ExecReload statement already exists then it'll be executed.
 	- If there is no ExecReload then we need to find the service's PID. For 
 	that, the function checks for pidfile and call "pidofproc -p $PIDFILE" 
@@ -249,7 +294,12 @@ def build_default_params():
 	
 	if config.has_option("Service", "KillMode"):
 		print "SIG=" + config.get("Service", "KillMode")
-
+		
+	if config.has_option("Service", "TimeoutSec"):
+		timeout = config.get("Service", "TimeoutSec")
+		if timeout != "0":
+			print "STARTTIMEOUT=", config.get("Service", "TimeoutSec")
+			
 	print
 
 def build_call_arguments():
