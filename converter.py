@@ -149,24 +149,27 @@ def bash_check_for_success(action, r_val=1):
 	------------------------------------
 	checks whether the "action" performed is completed in a given timeout period.
 	
-		prog_path: path of the daemon's executable
 		action: start, stop etc.
 	
 	returns: It simply prints a few statements to STDOUT. No return value.
 '''	
 	
-def timeout(prog_path, action):
+def timeout(action):
+	
 	if config.has_option("Service", "TimeoutSec"):
 		if config.get("Service", "TimeoutSec")	 == "0":
 			bash_check_for_success(action)
 		else:
+			if config.has_option("Service", "ExecStart"):
+				prog_path = config.get("Service", "ExecStart").split(" ")[0]
 			print "\tTIMEOUT = $STARTTIMEOUT"
+			print "\tTEMPPID = pidofproc", prog_path
 			print "\twhile [ TIMEOUT -gt 0 ]; do"
 			if action == "start":
-				print "\t\tif ! /bin/kill -0", prog_path, "; then"
+				print "\t\tif ! /bin/kill -0 $TEMPPID ; then"
 				print "\t\t\techo $prog started successfully\""
 			elif action == "stop":
-				print "\t\tif /bin/kill -0", prog_path, "; then"
+				print "\t\tif /bin/kill -0 $TEMPPID ; then"
 				print "\t\t\techo $prog stopped successfully\""
 			print "\t\t\tbreak"
 			print "\t\tfi"
@@ -174,8 +177,27 @@ def timeout(prog_path, action):
 			print "\t\tlet TIMEOUT=${TIMEOUT} - 1"
 			print "\tdone\n"
 			print "\tif [ $TIMEOUT -eq 0 ]; then"
-			print "\t\techo \"Timeout error occured trying to start $prog\""
-			print "\tfi"
+			# Send a SIGTERM signal and if timed out again, kill it
+			if action == "stop":
+				print "\t\tTIMEOUT = $STARTTIMEOUT"
+				print "\t\tkill -15 $TEMPPID"
+				print "\t\twhile [ TIMEOUT -gt 0 ]; do"
+				print "\t\t\tif /bin/kill -0 $TEMPPID ; then"
+				print "\t\t\t\techo $prog terminated successfully\""
+				print "\t\t\t\tbreak"
+				print "\t\t\tfi"
+				print "\t\t\tsleep 1"
+				print "\t\t\tlet TIMEOUT=${TIMEOUT} - 1"
+				print "\t\tdone\n"
+				print "\t\tif [ $TIMEOUT -eq 0 ]; then"
+				print "\t\t\tkill -9 $TEMPPID"
+				print "\t\t\techo \"$prog killed\""
+				print "\t\tfi"
+			else:
+				print "\t\techo \"Timeout error occurred trying to", action,
+				print "$prog\"\n\tfi"
+	else:
+		bash_check_for_success(action)
 
 def build_start():
 	print "start() {\n\techo - n \"Starting $prog: \""
@@ -189,17 +211,12 @@ def build_start():
 		
 	if config.has_option("Service", "ExecStart"):
 		exec_start = config.get("Service", "ExecStart")
-		prog_path = config.get("Service", "ExecStart").split(" ")[0]
 		if config.has_option("Service", "PIDFile"):
 			print "\tstart_daemon " + "-p $PIDFILE " + exec_start
 		else:
 			print "\tstart_daemon " + exec_start
 			
-		if config.has_option("Service", "TimeoutSec"):
-			if config.get("Service", "TimeoutSec")	 == "0":
-				bash_check_for_success("start")
-			else:
-				timeout(prog_path, "start")
+		timeout("start")
 			
 	if config.has_option("Service", "ExecStartPost"):
 		start_post_list = config.get("Service", "ExecStartPost").split(';')
@@ -228,6 +245,7 @@ def build_stop():
 	
 	if config.has_option("Service", "ExecStop"):
 		print "\t", config.get("Service", "ExecStop")
+		timeout("stop")
 		
 	else:
 		if config.has_option("Service", "ExecStart"):
@@ -242,7 +260,8 @@ def build_stop():
 			if config.has_option("Service", "KillSignal"):
 				print "\tkillproc -s", config.get("Service", "KillSignal"),
 				print prog_path
-		bash_check_for_success("stop")
+		
+		timeout("stop")
 
 	if config.has_option("Service", "ExecStopPost"):
 		stop_post_list = config.get("Service", "ExecStopPost").split(';')
