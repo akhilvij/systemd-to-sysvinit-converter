@@ -2,9 +2,20 @@
 import ConfigParser
 import sys
 
+class newdict(dict):
+	def __setitem__(self, key, value):
+		if key in self:
+			try:
+				tmp = self[key] + value
+			except:
+				return
+			dict.__setitem__(self, key, tmp)
+		else:
+			dict.__setitem__(self, key, value)
+
 def parser_init():
 	global config
-	config = ConfigParser.ConfigParser()
+	config = ConfigParser.ConfigParser(None, newdict)
 	if len(sys.argv) > 1:
 		if not config.read(sys.argv[1]):
 			print "Unable to parse file", sys.argv[1]
@@ -16,11 +27,11 @@ def parser_init():
 
 def add_description():
 	if config.has_option("Unit", "Description"):
-		print "Short-Description: " + config.get("Unit", "Description")
+		print "Short-Description: " + config.get("Unit", "Description")[0]
 
 def add_runlevels():
 	if config.has_option("Install", "WantedBy"):
-			runlevel = config.get("Install", "WantedBy")
+			runlevel = config.get("Install", "WantedBy")[0]
 			if runlevel == "multi-user.target":
 				print "Default-Start:\t2 3 4"
 				print "Default-Stop:\t0 1 6"
@@ -57,7 +68,7 @@ def add_required_service():
 
 	for option in options:
 		if config.has_option("Unit", option):
-			after_services_str = config.get("Unit", option)
+			after_services_str = config.get("Unit", option)[0]
 			for unit in after_services_str.split(" "):
 				if unit == "syslog.target" and syslog_flag:
 					required_str = required_str + "$syslog "
@@ -91,7 +102,7 @@ def add_should_service():
 	options = ['Wants']
 	for option in options:
 		if config.has_option("Unit", option):
-			after_services_str = config.get("Unit", option)
+			after_services_str = config.get("Unit", option)[0]
 			for unit in after_services_str.split(" "):
 				if unit == "syslog.target" and syslog_flag:
 					should_str = should_str + "$syslog "
@@ -157,11 +168,11 @@ def bash_check_for_success(action, r_val=1):
 def timeout(action):
 	
 	if config.has_option("Service", "TimeoutSec"):
-		if config.get("Service", "TimeoutSec")	 == "0":
+		if config.get("Service", "TimeoutSec")[0] == "0":
 			bash_check_for_success(action)
 		else:
 			if config.has_option("Service", "ExecStart"):
-				prog_path = config.get("Service", "ExecStart").split(" ")[0]
+				prog_path = config.get("Service", "ExecStart")[0].split(" ")[0]
 			print "\tTIMEOUT = $STARTTIMEOUT"
 			print "\tTEMPPID = pidofproc", prog_path
 			print "\twhile [ TIMEOUT -gt 0 ]; do"
@@ -203,14 +214,14 @@ def build_start():
 	print "start() {\n\techo - n \"Starting $prog: \""
 
 	if config.has_option("Service", "ExecStartPre"):
-		start_pre_list = config.get("Service", "ExecStartPre").split(';')
+		start_pre_list = config.get("Service", "ExecStartPre")[0].split(';')
 		for start_pre in start_pre_list:
 			print "\tstart_daemon " + start_pre
 			if start_pre[0] != "-":
 				bash_check_for_success("start")
 		
 	if config.has_option("Service", "ExecStart"):
-		exec_start = config.get("Service", "ExecStart")
+		exec_start = config.get("Service", "ExecStart")[0]
 		if config.has_option("Service", "PIDFile"):
 			print "\tstart_daemon " + "-p $PIDFILE " + exec_start
 		else:
@@ -219,7 +230,7 @@ def build_start():
 		timeout("start")
 			
 	if config.has_option("Service", "ExecStartPost"):
-		start_post_list = config.get("Service", "ExecStartPost").split(';')
+		start_post_list = config.get("Service", "ExecStartPost")[0].split(';')
 		for start_post in start_post_list:
 			print "\tstart_daemon " + start_post
 			if start_post[0] != "-":
@@ -244,27 +255,27 @@ def build_stop():
 	print "stop() {\n\techo -n \"Stopping $prog: \""
 	
 	if config.has_option("Service", "ExecStop"):
-		print "\t", config.get("Service", "ExecStop")
+		print "\t", config.get("Service", "ExecStop")[0]
 		timeout("stop")
 		
 	else:
 		if config.has_option("Service", "ExecStart"):
-			prog_path = config.get("Service", "ExecStart").split(" ")[0]
+			prog_path = config.get("Service", "ExecStart")[0].split(" ")[0]
 		if config.has_option("Service", "PIDFile"):
 			if config.has_option("Service", "KillSignal"):
 				print "\tkillproc -p $PIDFILE -s",
-				print config.get("Service", "KillSignal"), prog_path
+				print config.get("Service", "KillSignal")[0], prog_path
 			else:
 				print "\tkillproc -p $PIDFILE ", prog_path
 		else:
 			if config.has_option("Service", "KillSignal"):
-				print "\tkillproc -s", config.get("Service", "KillSignal"),
+				print "\tkillproc -s", config.get("Service", "KillSignal")[0],
 				print prog_path
 		
 		timeout("stop")
 
 	if config.has_option("Service", "ExecStopPost"):
-		stop_post_list = config.get("Service", "ExecStopPost").split(';')
+		stop_post_list = config.get("Service", "ExecStopPost")[0].split(';')
 		for stop_post in stop_post_list:
 			print "\t", stop_post
 			if stop_post[0] != "-":
@@ -285,13 +296,13 @@ def build_stop():
 def build_reload():
 	print "reload () {\n\techo -n \"Reloading $prog: \""
 	if config.has_option("Service", "ExecReload"):
-		print "\t", config.get("Service", "ExecReload")
+		print "\t", config.get("Service", "ExecReload")[0]
 		
 	else:
 		if config.has_option("Service", "PIDFile"):
 			print "\tPID = pidofproc -p $PIDFILE"
 		elif config.has_option("Service", "ExecStart"):
-			exec_path = config.get("Service", "ExecStart").split(" ")[0]
+			exec_path = config.get("Service", "ExecStart")[0].split(" ")[0]
 			print "\tPID = pidofproc ", exec_path
 		else:
 			print "}\n"
@@ -306,18 +317,18 @@ def build_default_params():
 	print "prog=" + prog
 
 	if config.has_option("Service", "EnvironmentFile"):
-		check_env_file(config.get("Service", "EnvironmentFile"));
+		check_env_file(config.get("Service", "EnvironmentFile")[0]);
 
 	if config.has_option("Service", "PIDFile"):
-		print "PIDFILE=${PIDFILE-" + config.get("Service", "PIDFile")
+		print "PIDFILE=${PIDFILE-" + config.get("Service", "PIDFile")[0]
 	
 	if config.has_option("Service", "KillMode"):
-		print "SIG=" + config.get("Service", "KillMode")
+		print "SIG=" + config.get("Service", "KillMode")[0]
 		
 	if config.has_option("Service", "TimeoutSec"):
-		timeout = config.get("Service", "TimeoutSec")
+		timeout = config.get("Service", "TimeoutSec")[0]
 		if timeout != "0":
-			print "STARTTIMEOUT=", config.get("Service", "TimeoutSec")
+			print "STARTTIMEOUT=", config.get("Service", "TimeoutSec")[0]
 			
 	print
 
