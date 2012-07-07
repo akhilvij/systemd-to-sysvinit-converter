@@ -1,16 +1,22 @@
 
+'''
+ @author: Akhil Vij
+'''
+
 import ConfigParser
 import sys
+from types import StringType
 
 class newdict(dict):
 	def __setitem__(self, key, value):
 		if key in self:
-			try:
-				tmp = self[key] + value
-			except:
-				return
-			dict.__setitem__(self, key, tmp)
+			if type(value) is not StringType:
+				dict.__setitem__(self, key, self[key] + value)
 		else:
+			if type(value) is StringType:
+				temp_list = []
+				temp_list.append(value)
+				value = temp_list
 			dict.__setitem__(self, key, value)
 
 def parser_init():
@@ -141,61 +147,64 @@ def build_LSB_header(): #add more arguments here
 	add_should_service()
 	add_runlevels()
 	print "### END INIT INFO"
+
+def exec_path():
+	'''
+	Function: exec_path()
+	---------------------
+	Uses the ExecStart option to fetch the daemon's executable path
 	
-'''
+	@return: The daemon's executable
+	 
+	'''
+	if config.has_option("Service", "ExecStart"):
+		return clear_dash_prefix(config.get("Service",
+										"ExecStart")[0]).split()[0]
+	return ""
+
+def clear_dash_prefix(exec_str):
+	'''
 	Function: clear_dash_prefix(string)
 	--------------------------------------
 	removes the '-' prefix from the argument.
 	
-		str: string which needs the cleanup
-		
-	Returns: Returns the string after removing the string.
-	
-'''
-def clear_dash_prefix(exec_str):
+	@param str: string which needs the cleanup
+	@return: Returns the string after removing the string.
+	'''
 	if exec_str[0] == '-':
 		return exec_str[1:len(exec_str)]
 	return exec_str
 	
-""" 
+def bash_check_for_success(action, r_val=1):
+	''' 
 	Function: bash_check_for_success(action, return_value = 1)
 	----------------------------------------------------------
 	This functions is used to check the return value of every command executed
 	in the init script. The syntax is simple.
 		
-		action: start, stop etc.
-		return_val: The value used for "exit" when the check fails.
-		
-	returns: It simply prints a few statements to STDOUT. No return value.
-
-"""
-
-def bash_check_for_success(action, r_val=1):
+	@param action: start, stop etc.
+	@param return_val: The value used for "exit" when the check fails.	
+	@return: It simply prints a few statements to STDOUT. No return value.: 
+	'''
 	print "\tif [ $? -ne 0 ]; then"
 	print "\t\techo \"Unable to " + action + " $prog\"\n\t\texit " + str(r_val)
 	print "\tfi"
-	
-'''
+		
+def timeout(action):
+	'''
 	Function: timeout(prog_path, action)
 	------------------------------------
 	checks whether the "action" performed is completed in a given timeout period.
 	
-		action: start, stop etc.
-	
-	returns: It simply prints a few statements to STDOUT. No return value.
-'''	
-	
-def timeout(action):
-	
+	@param action: start, stop etc.
+	@return: It simply prints a few statements to STDOUT. No return value.
+	'''	
 	if config.has_option("Service", "TimeoutSec"):
 		if config.get("Service", "TimeoutSec")[0] == "0":
 			bash_check_for_success(action)
 		else:
-			if config.has_option("Service", "ExecStart"):
-				prog_path = config.get("Service",
-									"ExecStart")[0].split(" ")[0]
 			print "\tTIMEOUT = $STARTTIMEOUT"
-			print "\tTEMPPID = pidofproc", prog_path
+			print "\tTEMPPID = pidofproc", exec_path()
 			print "\twhile [ TIMEOUT -gt 0 ]; do"
 			if action == "start":
 				print "\t\tif ! /bin/kill -0 $TEMPPID ; then"
@@ -273,8 +282,9 @@ def build_start():
 				bash_check_for_success("start")
 	print "}\n"
 
-'''
-The behaviour of build_stop is based on the option "killmode"
+def build_stop():
+	'''
+	The behaviour of build_stop is based on the option "killmode"
 	=> control-group - This is the default. In this case, the ExecStop is
 	executed first and then rest of the processes are killed.
 	=> process - Only the main process is killed.
@@ -283,10 +293,7 @@ The behaviour of build_stop is based on the option "killmode"
 	Since, we don't have the concept of control group in sysV, we simply run
 	ExecStop and kill all the remaining processes. The signal for killing is
 	derived from "KillSignal" option.
-
-'''
-
-def build_stop():
+	'''
 	print "stop() {\n\techo -n \"Stopping $prog: \""
 	
 	if config.has_option("Service", "ExecStop"):
@@ -300,18 +307,16 @@ def build_stop():
 		timeout("stop")
 		
 	else:
-		if config.has_option("Service", "ExecStart"):
-			prog_path = config.get("Service", "ExecStart")[0].split(" ")[0]
 		if config.has_option("Service", "PIDFile"):
 			if config.has_option("Service", "KillSignal"):
 				print "\tkillproc -p $PIDFILE -s",
-				print config.get("Service", "KillSignal")[0], prog_path
+				print config.get("Service", "KillSignal")[0], exec_path()
 			else:
-				print "\tkillproc -p $PIDFILE ", prog_path
+				print "\tkillproc -p $PIDFILE ", exec_path()
 		else:
 			if config.has_option("Service", "KillSignal"):
 				print "\tkillproc -s", config.get("Service", "KillSignal")[0],
-				print prog_path
+				print exec_path()
 		
 		timeout("stop")
 
@@ -326,8 +331,9 @@ def build_stop():
 			if stop_post[0] != "-":
 				bash_check_for_success("stop")
 	print "}\n"
-	
-""" 
+
+def build_reload():
+	""" 
 	This functions generates the reload() bash function. Here is how it works:
 	- If ExecReload statement already exists then it'll be executed.
 	- If there is no ExecReload then we need to find the service's PID. For 
@@ -335,29 +341,31 @@ def build_stop():
 	else it'll find the service's executable through ExecStart and execute 
 	"pidofproc /path/to/executable". Since, ExecStart is mandatory for every
 	service, obtaining path is easy and reliable.
-
-"""
-
-def build_reload():
+	"""
 	print "reload () {\n\techo -n \"Reloading $prog: \""
 	if config.has_option("Service", "ExecReload"):
-		print "\t", config.get("Service", "ExecReload")[0]
-		
+		if len(config.get("Service", "ExecReload")) == 1:
+			reload_list = config.get("Service", "ExecReload")[0].split(';')
+		else:
+			reload_list = config.get("Service", "ExecReload")
+		for exec_reload in reload_list:
+			print "\t", clear_dash_prefix(exec_reload)
+			if exec_reload[0] != "-":
+				bash_check_for_success("reload")
+						
 	else:
 		if config.has_option("Service", "PIDFile"):
 			print "\tPID = pidofproc -p $PIDFILE"
-		elif config.has_option("Service", "ExecStart"):
-			exec_path = config.get("Service", "ExecStart")[0].split(" ")[0]
-			print "\tPID = pidofproc ", exec_path
+		
 		else:
-			print "}\n"
+				print "\tPID = pidofproc", exec_path()
 		print "\tif [ $PID -eq 1 -o $PID -eq 2 -o $PID -eq 3 ] then"
-		print "\t\techo \"Unable to Reload - Service is not running\"" 
+		print "\t\techo \"Unable to Reload - Service is not running\"\n\tfi" 
 		print "\tkill -HUP $PID"
 	print "}\n"
 
 def build_default_params():
-# This file is included to comply with lsb guidelines.
+	''' This file is included to comply with lsb guidelines.'''
 	print "\n. /lib/lsb/init-functions\n"
 	print "prog=" + prog
 
@@ -378,7 +386,6 @@ def build_default_params():
 	print
 
 def build_call_arguments():
-# check for status
 	print """case "$1" in"""
 	print "\tstart)\n\t\tstart\n\t\t;;"
 	print "\tstop)\n\t\tstop\n\t\t;;"
