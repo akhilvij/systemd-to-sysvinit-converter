@@ -22,14 +22,16 @@ class newdict(dict):
 def parser_init():
 	global config
 	config = ConfigParser.ConfigParser(None, newdict)
-	if len(sys.argv) > 1:
+	if len(sys.argv) == 2:
 		if not config.read(sys.argv[1]):
 			print "Unable to parse file", sys.argv[1]
+			sys.exit(2)
 			return;
 		global prog
 		prog = (sys.argv[1].split('/')[-1]).split('.')[0]
 	else:
 		print "Usage: python code.py /location/of/systemd/conf_file"
+		sys.exit(2)
 
 def add_description():
 	if config.has_option("Unit", "Description"):
@@ -71,6 +73,7 @@ def add_required_service():
 	network_flag = True
 	local_fs_flag = True
 	rpcbind_flag = True
+	nsslookup_flag = True
 	options = ['After', 'Requires']
 
 	for option in options:
@@ -92,8 +95,11 @@ def add_required_service():
 					required_str = required_str + "$local_fs "
 					local_fs_flag = False
 				elif unit == "rpcbind.service" and rpcbind_flag:
-					required_str = required_str + "$portmap"
+					required_str = required_str + "$portmap "
 					rpcbind_flag = False
+				elif unit == "nss-lookup.target" and nsslookup_flag:
+					required_str = required_str + "$named "
+					nsslookup_flag = False
 		else:
 			break
 
@@ -135,17 +141,20 @@ def add_should_service():
 def check_env_file(Environment_file):
 	print "if test -f", Environment_file, "; then\n\t.", Environment_file,
 	print "\nfi\n"
-															
+					
+def add_provides():
+	print "Provides:", prog
 
 def build_LSB_header(): #add more arguments here
 	print "### BEGIN INIT INFO"
 # Call functions here for Provides, Required-Start, Required-Stop,
 # Default-Start, Default-Stop, Short-Description and Description. Don't know
 # whether we can get all the info for this from the "Unit" Section alone.
-	add_description()
+	add_provides()
 	add_required_service()
 	add_should_service()
 	add_runlevels()
+	add_description()
 	print "### END INIT INFO"
 
 def exec_path():
@@ -373,10 +382,10 @@ def build_default_params():
 		check_env_file(config.get("Service", "EnvironmentFile")[0]);
 
 	if config.has_option("Service", "PIDFile"):
-		print "PIDFILE=${PIDFILE-" + config.get("Service", "PIDFile")[0]
+		print "PIDFILE={PIDFILE:-"+ config.get("Service", "PIDFile")[0]+"}"
 	
 	if config.has_option("Service", "KillMode"):
-		print "SIG=" + config.get("Service", "KillMode")[0]
+		print "SIG={SIG:-" + config.get("Service", "KillMode")[0]+"}"
 		
 	if config.has_option("Service", "TimeoutSec"):
 		timeout = config.get("Service", "TimeoutSec")[0]
