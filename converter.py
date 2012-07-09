@@ -1,3 +1,4 @@
+#!/usr/bin/python
 
 '''
  @author: Akhil Vij
@@ -18,6 +19,9 @@ class newdict(dict):
 				temp_list.append(value)
 				value = temp_list
 			dict.__setitem__(self, key, value)
+
+# Function to initiate the parser, returns with error code 2 if the incorrect
+# arguments are provided to the script
 
 def parser_init():
 	global config
@@ -50,30 +54,37 @@ def add_runlevels():
 				print "Default-Stop:\t0 1 6??"
 				return 5
 
-# Not sure about basic.target & rescue.target : 
+# Not sure about few targets : 
 # check once - 
 # https://fedoraproject.org/wiki/User:Johannbg/QA/Systemd/Systemd.special
 
 			elif runlevel == "basic.target":
 				print "Default-Start:\t1"
-				print "Default-Stop:\t??"
+				print "Default-Stop:\t"
 				return 1
 
 			elif runlevel == "rescue.target":
 				print "Default-Start:\t1"
+				print "Default-Stop:\t0 2 3 4 5 6"
 				return 1
 
 			else:
 				return
 
 def add_required_service():
-	required_str = "Required-Start:\t"
+	required_str = "Required-Start:\t$syslog $local_fs "
 	remote_fs_flag = True
-	syslog_flag = True
+	syslog_flag = False
 	network_flag = True
-	local_fs_flag = True
+	local_fs_flag = False
 	rpcbind_flag = True
 	nsslookup_flag = True
+	if config.has_option("Unit", "DefaultDependencies"):
+		if config.get("Unit", "DefaultDependencies")[0] == "no":
+			required_str = "Required-Start:\t"
+			local_fs_flag = True
+			syslog_flag = True
+			
 	options = ['After', 'Requires']
 
 	for option in options:
@@ -83,15 +94,16 @@ def add_required_service():
 				if unit == "syslog.target" and syslog_flag:
 					required_str = required_str + "$syslog "
 					syslog_flag = False
-				elif (unit == "remote-fs.target" or unit == 
-					"proc-fs-nfsd.mount" or unit == 
-					"var-lib-nfs-rpc_pipefs.mount") and remote_fs_flag:
+				elif (unit == "remote-fs.target" or 
+				unit == "proc-fs-nfsd.mount" or
+				unit == "var-lib-nfs-rpc_pipefs.mount" or 
+				exec_path()[0:4] == "/usr") and remote_fs_flag:
 					required_str = required_str + "$remote_fs "
 					remote_fs_flag = False
 				elif unit == "network.target" and network_flag:
 					required_str = required_str + "$network "
 					network_flag = False
-				elif unit == "local_fs.target" and local_fs_flag:
+				elif (unit == "local_fs.target" or unit == "basic.target") and local_fs_flag:
 					required_str = required_str + "$local_fs "
 					local_fs_flag = False
 				elif unit == "rpcbind.service" and rpcbind_flag:
@@ -167,9 +179,10 @@ def exec_path():
 	 
 	'''
 	if config.has_option("Service", "ExecStart"):
-		return clear_dash_prefix(config.get("Service",
-										"ExecStart")[0]).split()[0]
+		return clear_dash_prefix(config.get("Service", "ExecStart")[0]).split()[0]
 	return ""
+# Put the error condition here for absence of ExecStart and exit with non-zero return value	
+		
 
 def clear_dash_prefix(exec_str):
 	'''
@@ -196,7 +209,13 @@ def bash_check_for_success(action, r_val=1):
 	@return: It simply prints a few statements to STDOUT. No return value.: 
 	'''
 	print "\tif [ $? -ne 0 ]; then"
-	print "\t\techo \"Unable to " + action + " $prog\"\n\t\texit " + str(r_val)
+#	print "\t\techo \"Unable to " + action + " $prog\"\n\t\texit " + str(r_val)
+	print "\t\tlog_failure_msg \"Unable to " + action + " $prog\""
+	print "\t\texit 1"
+	print "\tfi"
+
+	print "\tif [ $? -e 0 ]; then"
+	print "\t\tlog_success_msg \"Successfully able to " + action + " $prog\""
 	print "\tfi"
 		
 def timeout(action):
@@ -217,10 +236,12 @@ def timeout(action):
 			print "\twhile [ TIMEOUT -gt 0 ]; do"
 			if action == "start":
 				print "\t\tif ! /bin/kill -0 $TEMPPID ; then"
-				print "\t\t\techo $prog started successfully\""
+#				print "\t\t\techo $prog started successfully\""
+				print "\t\t\tlog_success_msg \"$prog started successfully\""
 			elif action == "stop":
 				print "\t\tif /bin/kill -0 $TEMPPID ; then"
-				print "\t\t\techo $prog stopped successfully\""
+#				print "\t\t\techo $prog stopped successfully\""
+				print "\t\t\tlog_success_msg \"$prog stopped successfully\""
 			print "\t\t\tbreak"
 			print "\t\tfi"
 			print "\t\tsleep 1"
@@ -233,7 +254,8 @@ def timeout(action):
 				print "\t\tkill -15 $TEMPPID"
 				print "\t\twhile [ TIMEOUT -gt 0 ]; do"
 				print "\t\t\tif /bin/kill -0 $TEMPPID ; then"
-				print "\t\t\t\techo $prog terminated successfully\""
+		#		print "\t\t\t\techo $prog terminated successfully\""
+				print "\t\t\t\tlog_success_msg \"$prog terminated successfully\""
 				print "\t\t\t\tbreak"
 				print "\t\t\tfi"
 				print "\t\t\tsleep 1"
@@ -244,14 +266,17 @@ def timeout(action):
 				print "\t\t\techo \"$prog killed\""
 				print "\t\tfi"
 			else:
-				print "\t\techo \"Timeout error occurred trying to", action,
-				print "$prog\"\n\tfi"
+		#		print "\t\techo \"Timeout error occurred trying to", action,
+				print "\t\tlog_failure_msg \"Timeout error occurred trying to",
+				print action, "$prog\""
+				print "\t\texit 1"
+				print "\tfi"
 	else:
 		bash_check_for_success(action)
 
 def build_start():
-	print "start() {\n\techo - n \"Starting $prog: \""
-
+#	print "start() {\n\techo - n \"Starting $prog: \""
+	print "start() {\n\tlog_daemon_msg \"Starting $DESC\" \"$prog\""
 	if config.has_option("Service", "ExecStartPre"):
 		if len(config.get("Service", "ExecStartPre")) == 1:
 			start_pre_list = config.get("Service",
@@ -268,8 +293,7 @@ def build_start():
 		if config.has_option("Service", "Type"):
 			if config.get("Service", "Type")[0].lower() == "oneshot":
 				if len(config.get("Service", "ExecStart")) == 1:
-					start_list = config.get("Service",
-										"ExecStart")[0].split(';')
+					start_list = config.get("Service", "ExecStart")[0].split(';')
 		for exec_start in start_list:
 			if config.has_option("Service", "PIDFile"):
 				print "\tstart_daemon " + "-p $PIDFILE",
@@ -289,7 +313,7 @@ def build_start():
 			print "\tstart_daemon", clear_dash_prefix(start_post)
 			if start_post[0] != "-":
 				bash_check_for_success("start")
-	print "}\n"
+	print "\texit 0\n}\n"
 
 def build_stop():
 	'''
@@ -303,12 +327,12 @@ def build_stop():
 	ExecStop and kill all the remaining processes. The signal for killing is
 	derived from "KillSignal" option.
 	'''
-	print "stop() {\n\techo -n \"Stopping $prog: \""
+	#print "stop() {\n\techo -n \"Stopping $prog: \""
 	
 	if config.has_option("Service", "ExecStop"):
+		print "stop() {\n\tlog_daemon_msg \"Stopping $DESC\" \"$prog\""
 		if len(config.get("Service", "ExecStop")) == 1:
-			stop_list = config.get("Service",
-									"ExecStop")[0].split(';')
+			stop_list = config.get("Service", "ExecStop")[0].split(';')
 		else:
 			stop_list = config.get("Service", "ExecStop")
 		for exec_stop in stop_list:
@@ -317,30 +341,37 @@ def build_stop():
 		
 	else:
 		if config.has_option("Service", "PIDFile"):
+			print "stop() {\n\tlog_daemon_msg \"Stopping $DESC\" \"$prog\""
 			if config.has_option("Service", "KillSignal"):
 				print "\tkillproc -p $PIDFILE -s",
 				print config.get("Service", "KillSignal")[0], exec_path()
 			else:
 				print "\tkillproc -p $PIDFILE ", exec_path()
 		else:
+			print "stop() {\n\tlog_daemon_msg \"Stopping $DESC\" \"$prog\""
 			if config.has_option("Service", "KillSignal"):
 				print "\tkillproc -s", config.get("Service", "KillSignal")[0],
 				print exec_path()
-		
+			else:
+				print "\tkillproc", exec_path()
+				
 		timeout("stop")
 
 	if config.has_option("Service", "ExecStopPost"):
 		if len(config.get("Service", "ExecStopPost")) == 1:
-			stop_post_list = config.get("Service",
-									"ExecStopPost")[0].split(';')
+			stop_post_list = config.get("Service", "ExecStopPost")[0].split(';')
 		else:
 			stop_post_list = config.get("Service", "ExecStopPost")
 		for stop_post in stop_post_list:
 			print "\t", clear_dash_prefix(stop_post)
 			if stop_post[0] != "-":
 				bash_check_for_success("stop")
-	print "}\n"
+		print "\texit 0\n}\n"
 
+	else:
+		print "\texit 0\n}\n"
+
+	
 def build_reload():
 	""" 
 	This functions generates the reload() bash function. Here is how it works:
@@ -351,8 +382,9 @@ def build_reload():
 	"pidofproc /path/to/executable". Since, ExecStart is mandatory for every
 	service, obtaining path is easy and reliable.
 	"""
-	print "reload () {\n\techo -n \"Reloading $prog: \""
+#	print "reload () {\n\techo -n \"Reloading $prog: \""
 	if config.has_option("Service", "ExecReload"):
+		print "reload() {\n\tlog_daemon_msg \"Reloading $DESC\" \"$prog\""
 		if len(config.get("Service", "ExecReload")) == 1:
 			reload_list = config.get("Service", "ExecReload")[0].split(';')
 		else:
@@ -361,16 +393,17 @@ def build_reload():
 			print "\t", clear_dash_prefix(exec_reload)
 			if exec_reload[0] != "-":
 				bash_check_for_success("reload")
-						
-	else:
-		if config.has_option("Service", "PIDFile"):
-			print "\tPID = pidofproc -p $PIDFILE"
+		print "\texit 0\n}\n"
 		
-		else:
-				print "\tPID = pidofproc", exec_path()
-		print "\tif [ $PID -eq 1 -o $PID -eq 2 -o $PID -eq 3 ] then"
-		print "\t\techo \"Unable to Reload - Service is not running\"\n\tfi" 
-		print "\tkill -HUP $PID"
+def build_force_reload():
+	print "force_reload() {"
+	if config.has_option("Service", "ExecReload"):
+		print "\treload"
+		print "\tif [ $? -ne 0 ]; then"
+		print "\t\trestart"
+		print "\tfi"
+	else:
+		print "\trestart"
 	print "}\n"
 
 def build_default_params():
@@ -382,10 +415,13 @@ def build_default_params():
 		check_env_file(config.get("Service", "EnvironmentFile")[0]);
 
 	if config.has_option("Service", "PIDFile"):
-		print "PIDFILE={PIDFILE:-"+ config.get("Service", "PIDFile")[0]+"}"
+		print "PIDFILE={PIDFILE:-" + config.get("Service", "PIDFile")[0] + "}"
 	
 	if config.has_option("Service", "KillMode"):
-		print "SIG={SIG:-" + config.get("Service", "KillMode")[0]+"}"
+		print "SIG={SIG:-" + config.get("Service", "KillMode")[0] + "}"
+	
+	if config.has_option("Unit", "Description"):
+		print "DESC={DESC:-" + config.get("Unit", "Description")[0] + "}"
 		
 	if config.has_option("Service", "TimeoutSec"):
 		timeout = config.get("Service", "TimeoutSec")[0]
@@ -399,9 +435,14 @@ def build_call_arguments():
 	print "\tstart)\n\t\tstart\n\t\t;;"
 	print "\tstop)\n\t\tstop\n\t\t;;"
 	print "\treload)\n\t\treload\n\t\t;;"
+	print "\tforce-reload)\n\t\tforce_reload\n\t\t;;"
 	print "\trestart)\n\t\tstop\n\tstart\n\t\t;;"
 	print "\t* )\n\t\techo $\"Usage: $prog",
-	print "{start|stop|reload|restart|status}\""
+	if config.has_option("Service", "ExecReload"):
+		print "{start|stop|reload|force-reload|restart}\""
+	else:
+		print "{start|stop|force-reload|restart}\""
+	print "\t\texit 2"
 	print "esac\n"
 
 # The build_{start,stop,reload} functions will be called irrespective of the
@@ -409,9 +450,11 @@ def build_call_arguments():
 # basic call exists(even if they have no operation).
 
 parser_init()
+print "#!/bin/bash"
 build_LSB_header()
 build_default_params()
 build_start()
 build_stop()
 build_reload()
+build_force_reload()
 build_call_arguments()
