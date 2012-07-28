@@ -5,8 +5,9 @@
 '''
 
 import ConfigParser
-import sys
+import sys, os
 from types import StringType
+import tempfile
 
 class newdict(dict):
 	def __setitem__(self, key, value):
@@ -24,19 +25,68 @@ class newdict(dict):
 # arguments are provided to the script
 
 def parser_init():
-	global config
+	global config, prog
 	config = ConfigParser.ConfigParser(None, newdict)
 	if len(sys.argv) == 2:
-		if not config.read(sys.argv[1]):
-			print "Unable to parse file", sys.argv[1]
-			sys.exit(2)
-			return;
-		global prog
 		prog = (sys.argv[1].split('/')[-1]).split('.')[0]
+		check_for_specifiers()
 	else:
 		print "Usage: python code.py /location/of/systemd/conf_file"
+		
+def check_for_specifiers():
+	'''
+	Function: check_for_specifiers()
+	--------------------------------
+	It checks for the specifiers mentioned in the systemd.unit man page.
+	Checks the file name and if the name contains "@" but no instance it
+	throws a warning to the user. Else replaces the specifiers with
+	appropriate values.
+	
+	@return: No return value.
+	
+	'''
+	
+	# Extract the whole file content in a single string
+	conf_fd = open(sys.argv[1], 'r')
+	conf_list = conf_fd.readlines()
+	conf_str = ''.join(conf_list)
+	
+	global template_file, instance_name, prefix_name
+	if prog.find('@') != -1:
+		template_file = 1
+		if len(prog.split('@')[1]) == 0:
+			print "[WARNING] No instance name specified: Generated script",
+			print "may not be correct"
+			sys.exit(1)
+			
+		else:
+			# This is the value of %i/I
+			instance_name = prog.split('@')[1]
+			print instance_name
+			# This is the value of %p/P 
+			prefix_name = prog.split('@')[0]
+			print prefix_name
+	else:
+		template_file = 0
+		
+	conf_new_str = replace_specifiers(conf_str)
+	conf_new_fd = tempfile.NamedTemporaryFile(delete=False)
+	tempname = conf_new_fd.name
+	conf_new_fd.write(conf_new_str)
+	conf_new_fd.flush()
+	os.fsync(conf_new_fd)
+	conf_new_fd.close()
+	
+	conf_new_fd = open(tempname, 'r')
+	
+	try:
+		config.readfp(conf_new_fd)
+		
+	except Exception, err:
+		print "Error:", str(err)
 		sys.exit(2)
-
+		return
+	
 def add_description():
 	if config.has_option("Unit", "Description"):
 		print "Short-Description: " + config.get("Unit", "Description")[0]
@@ -190,17 +240,53 @@ def clear_dash_prefix(exec_str):
 	--------------------------------------
 	removes the '-' prefix from the argument.
 	
-	@param str: string which needs the cleanup
+	@param exec_str: string which needs the cleanup
 	@return: Returns the string after removing the string.
 	'''
-	if exec_str[0] == '-':
-		return exec_str[1:len(exec_str)]
-	return exec_str
 	
+	if exec_str[0] == '-':
+		return exec_str[1:len(exec_str)]	
+	
+	return exec_str
+
+def replace_specifiers(exec_str):
+	'''
+	Function: replace_specifiers(exec_str)
+	--------------------------------------
+	Checks for the occurence of common specifiers in the string and replaces
+	them with appropriate values.
+	
+	@param exec_str: string which needs to be checked for specifiers
+	@return: The modified string with specifiers replaced or the same one if
+	none found.
+	'''
+
+	if template_file == 1:
+		# Check for %i/I specifiers and replace them with instance_name
+		if (exec_str.find('%i') != -1) or (exec_str.find('%I') != -1):
+			exec_str = exec_str.replace('%i', instance_name)
+			exec_str = exec_str.replace('%I', instance_name)				
+
+		# Check for %p/P specifiers and replace them with prefix_name
+		elif (exec_str.find('%p') != -1) or (exec_str.find('%P') != -1):	
+			exec_str.replace('%p', prefix_name)
+			exec_str.replace('%P', prefix_name)
+				
+		elif exec_str.find('%f') != -1:	
+			exec_str.replace('%p', '/' + instance_name)
+	
+	# Check for %u/U and replace them with full unit name. 
+	# Should mean 'prog'(doubtful)
+	if (exec_str.find('%u') != -1) or (exec_str.find('%U') != -1):
+		exec_str.replace('%u', prog)
+		exec_str.replace('%U', prog)
+		
+	return exec_str
+
 def bash_check_for_success(action, r_val=1):
 	''' 
-	Function: bash_check_for_success(action, return_value = 1)
-	----------------------------------------------------------
+	Function: bash_check_for_success(action, return_value=1)
+	- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 	This functions is used to check the return value of every command executed
 	in the init script. The syntax is simple.
 		
@@ -221,7 +307,7 @@ def bash_check_for_success(action, r_val=1):
 def timeout(action):
 	'''
 	Function: timeout(prog_path, action)
-	------------------------------------
+	- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 	checks whether the "action" performed is completed in a given timeout period.
 	
 	@param action: start, stop etc.
@@ -275,7 +361,6 @@ def timeout(action):
 		bash_check_for_success(action)
 
 def build_start():
-#	print "start() {\n\techo - n \"Starting $prog: \""
 	print "start() {\n\tlog_daemon_msg \"Starting $DESC\" \"$prog\""
 	if config.has_option("Service", "ExecStartPre"):
 		if len(config.get("Service", "ExecStartPre")) == 1:
@@ -318,17 +403,16 @@ def build_start():
 def build_stop():
 	'''
 	The behaviour of build_stop is based on the option "killmode"
-	=> control-group - This is the default. In this case, the ExecStop is
+	 = > control - group - This is the default. In this case, the ExecStop is
 	executed first and then rest of the processes are killed.
-	=> process - Only the main process is killed.
-	=> none - The ExecStop command is run and no process is killed.
+	 = > process - Only the main process is killed.
+	 = > none - The ExecStop command is run and no process is killed.
 	
 	Since, we don't have the concept of control group in sysV, we simply run
 	ExecStop and kill all the remaining processes. The signal for killing is
 	derived from "KillSignal" option.
 	'''
-	#print "stop() {\n\techo -n \"Stopping $prog: \""
-	
+		
 	if config.has_option("Service", "ExecStop"):
 		print "stop() {\n\tlog_daemon_msg \"Stopping $DESC\" \"$prog\""
 		if len(config.get("Service", "ExecStop")) == 1:
@@ -382,7 +466,6 @@ def build_reload():
 	"pidofproc /path/to/executable". Since, ExecStart is mandatory for every
 	service, obtaining path is easy and reliable.
 	"""
-#	print "reload () {\n\techo -n \"Reloading $prog: \""
 	if config.has_option("Service", "ExecReload"):
 		print "reload() {\n\tlog_daemon_msg \"Reloading $DESC\" \"$prog\""
 		if len(config.get("Service", "ExecReload")) == 1:
@@ -458,3 +541,4 @@ build_stop()
 build_reload()
 build_force_reload()
 build_call_arguments()
+
