@@ -32,6 +32,7 @@ def parser_init():
 		check_for_specifiers()
 	else:
 		print "Usage: python code.py /location/of/systemd/conf_file"
+		sys.exit(2);
 		
 def check_for_specifiers():
 	'''
