@@ -79,15 +79,25 @@ def check_for_specifiers():
 	conf_new_fd.close()
 	
 	conf_new_fd = open(tempname, 'r')
-	
+
 	try:
 		config.readfp(conf_new_fd)
-		
+	
 	except Exception, err:
 		print "Error:", str(err)
-		sys.exit(2)
+		sys.exit(1)
 		return
 	
+	check_for_service()
+	
+def check_for_service():
+	# Here we check if the file is a service file.
+	if config.has_section("Service"):
+		return;
+	else:
+		print "Error: The configuration file isn't a service file"
+		sys.exit(1)
+			
 def add_description():
 	if config.has_option("Unit", "Description"):
 		print "Short-Description: " + config.get("Unit", "Description")[0]
@@ -239,7 +249,7 @@ def clear_dash_prefix(exec_str):
 	'''
 	Function: clear_dash_prefix(string)
 	--------------------------------------
-	removes the '-' prefix from the argument.
+	removes the '-' prefix from the atmp5d4EFirgument.
 	
 	@param exec_str: string which needs the cleanup
 	@return: Returns the string after removing the string.
