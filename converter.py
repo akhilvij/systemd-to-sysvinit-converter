@@ -373,6 +373,16 @@ def timeout(action):
 
 def build_start():
 	print "start() {\n\tlog_daemon_msg \"Starting $DESC\" \"$prog\""
+	
+	if config.has_option("Unit", "ConditionPathExists"):
+		print "\tif [ ! -s",
+		print config.get("Unit", "ConditionPathExists")[0], "]; then"
+		print "\t\tlog_failure_msg \"Missing File",
+		print config.get("Unit", "ConditionPathExists")[0], "\""
+		print "\t\tlog_end_msg 1"
+		print "\t\texit 0"
+		print "\tfi"
+	
 	if config.has_option("Service", "ExecStartPre"):
 		if len(config.get("Service", "ExecStartPre")) == 1:
 			start_pre_list = config.get("Service",
