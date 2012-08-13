@@ -29,18 +29,27 @@ def parser_init():
 	config = ConfigParser.ConfigParser(None, newdict)
 	if len(sys.argv) == 2:
 		prog = (sys.argv[1].split('/')[-1]).split('.')[0]
+		check_for_file()
 		check_for_specifiers()
 	else:
 		print "Usage: python code.py /location/of/systemd/conf_file"
 		sys.exit(2);
+        
+def check_for_file():
+    try:
+        conf_fd = open(sys.argv[1], 'r')
+    
+    except Exception, err:
+        print err;
+        sys.exit(1);
 		
 def check_for_specifiers():
 	'''
 	Function: check_for_specifiers()
 	--------------------------------
 	It checks for the specifiers mentioned in the systemd.unit man page.
-	Checks the file name and if the name contains "@" but no instance it
 	throws a warning to the user. Else replaces the specifiers with
+	Checks the file name and if the name contains "@" but no instance it
 	appropriate values.
 	
 	@return: No return value.
@@ -86,7 +95,6 @@ def check_for_specifiers():
 	except Exception, err:
 		print "Error:", str(err)
 		sys.exit(1)
-		return
 	
 	check_for_service()
 	
@@ -100,19 +108,19 @@ def check_for_service():
 			
 def add_description():
 	if config.has_option("Unit", "Description"):
-		print "Short-Description: " + config.get("Unit", "Description")[0]
+		print "# Short-Description: " + config.get("Unit", "Description")[0]
 
 def add_runlevels():
 	if config.has_option("Install", "WantedBy"):
 			runlevel = config.get("Install", "WantedBy")[0]
 			if runlevel == "multi-user.target":
-				print "Default-Start:\t2 3 4"
-				print "Default-Stop:\t0 1 6"
+				print "# Default-Start:\t2 3 4"
+				print "# Default-Stop:\t0 1 6"
 				return 4
 
 			elif runlevel == "graphical.target":
-				print "Default-Start:\t2 3 4 5"
-				print "Default-Stop:\t0 1 6??"
+				print "# Default-Start:\t2 3 4 5"
+				print "# Default-Stop:\t0 1 6"
 				return 5
 
 # Not sure about few targets : 
@@ -120,33 +128,39 @@ def add_runlevels():
 # https://fedoraproject.org/wiki/User:Johannbg/QA/Systemd/Systemd.special
 
 			elif runlevel == "basic.target":
-				print "Default-Start:\t1"
-				print "Default-Stop:\t"
+				print "# Default-Start:\t1"
+				print "# Default-Stop:\t"
 				return 1
 
 			elif runlevel == "rescue.target":
-				print "Default-Start:\t1"
-				print "Default-Stop:\t0 2 3 4 5 6"
+				print "# Default-Start:\t1"
+				print "# Default-Stop:\t0 2 3 4 5 6"
 				return 1
 
 			else:
 				return
 
 def add_required_service():
-	required_str = "Required-Start:\t$syslog $local_fs "
+	required_str = "# Required-Start:\t$syslog $local_fs "
 	remote_fs_flag = True
 	syslog_flag = False
 	network_flag = True
 	local_fs_flag = False
 	rpcbind_flag = True
 	nsslookup_flag = True
+	time_flag = True
+
 	if config.has_option("Unit", "DefaultDependencies"):
 		if config.get("Unit", "DefaultDependencies")[0] == "no":
-			required_str = "Required-Start:\t"
+			required_str = "# Required-Start:\t"
 			local_fs_flag = True
 			syslog_flag = True
 			
 	options = ['After', 'Requires']
+	
+	if exec_path()[0:4] == "/usr" and remote_fs_flag:
+				required_str = required_str + "$remote_fs "
+				remote_fs_flag = False
 
 	for option in options:
 		if config.has_option("Unit", option):
@@ -155,12 +169,6 @@ def add_required_service():
 				if unit == "syslog.target" and syslog_flag:
 					required_str = required_str + "$syslog "
 					syslog_flag = False
-				elif (unit == "remote-fs.target" or 
-				unit == "proc-fs-nfsd.mount" or
-				unit == "var-lib-nfs-rpc_pipefs.mount" or 
-				exec_path()[0:4] == "/usr") and remote_fs_flag:
-					required_str = required_str + "$remote_fs "
-					remote_fs_flag = False
 				elif unit == "network.target" and network_flag:
 					required_str = required_str + "$network "
 					network_flag = False
@@ -173,18 +181,27 @@ def add_required_service():
 				elif unit == "nss-lookup.target" and nsslookup_flag:
 					required_str = required_str + "$named "
 					nsslookup_flag = False
-		else:
-			break
+				elif unit == "time-sync.target" and time_flag:
+					required_str = required_str + "$time "
+					time_flag = False
+				if (unit == "remote-fs.target" or 
+				unit == "proc-fs-nfsd.mount" or
+				unit == "var-lib-nfs-rpc_pipefs.mount") and remote_fs_flag:
+					required_str = required_str + "$remote_fs "
+					remote_fs_flag = False
+#		else:
+#			break
 
 	print required_str
 
 def add_should_service():
-	should_str = "Should-Start:\t"
+	should_str = "# Should-Start:\t"
 	remote_fs_flag = True
 	syslog_flag = True
 	network_flag = True
 	local_fs_flag = True
 	rpcbind_flag = True
+	time_flag = True
 	options = ['Wants']
 	for option in options:
 		if config.has_option("Unit", option):
@@ -205,8 +222,11 @@ def add_should_service():
 					should_str = should_str + "$local_fs "
 					local_fs_flag = False
 				elif unit == "rpcbind.service" and rpcbind_flag:
-					should_str = should_str + "$portmap"
+					should_str = should_str + "$portmap "
 					rpcbind_flag = False
+				elif unit == "time-sync.target" and time_flag:
+					should_str = should_str + "$time "
+					time_flag = False
 		else:
 			break
 	print should_str
@@ -216,7 +236,7 @@ def check_env_file(Environment_file):
 	print "\nfi\n"
 					
 def add_provides():
-	print "Provides:", prog
+	print "# Provides:", prog
 
 def build_LSB_header(): #add more arguments here
 	print "### BEGIN INIT INFO"
@@ -311,9 +331,14 @@ def bash_check_for_success(action, r_val=1):
 	print "\t\texit 1"
 	print "\tfi"
 
-	print "\tif [ $? -e 0 ]; then"
+	print "\tif [ $? -eq 0 ]; then"
 	print "\t\tlog_success_msg \"Successfully able to " + action + " $prog\""
 	print "\tfi"
+
+	if (action == "stop"):
+		print "\tif [ \"$1\" == \"stop\" ]; then"
+		print "\t\texit 0"
+		print "\tfi"
 		
 def timeout(action):
 	'''
@@ -373,16 +398,6 @@ def timeout(action):
 
 def build_start():
 	print "start() {\n\tlog_daemon_msg \"Starting $DESC\" \"$prog\""
-	
-	if config.has_option("Unit", "ConditionPathExists"):
-		print "\tif [ ! -s",
-		print config.get("Unit", "ConditionPathExists")[0], "]; then"
-		print "\t\tlog_failure_msg \"Missing File",
-		print config.get("Unit", "ConditionPathExists")[0], "\""
-		print "\t\tlog_end_msg 1"
-		print "\t\texit 0"
-		print "\tfi"
-	
 	if config.has_option("Service", "ExecStartPre"):
 		if len(config.get("Service", "ExecStartPre")) == 1:
 			start_pre_list = config.get("Service",
@@ -474,7 +489,8 @@ def build_stop():
 		print "\texit 0\n}\n"
 
 	else:
-		print "\texit 0\n}\n"
+#		print "\texit 0\n}\n"
+		print "}\n"
 
 	
 def build_reload():
@@ -507,7 +523,7 @@ def build_force_reload():
 		print "\t\trestart"
 		print "\tfi"
 	else:
-		print "\trestart"
+		print "\tstop\n\tstart\n"
 	print "}\n"
 
 def build_default_params():
@@ -525,7 +541,7 @@ def build_default_params():
 		print "SIG={SIG:-" + config.get("Service", "KillMode")[0] + "}"
 	
 	if config.has_option("Unit", "Description"):
-		print "DESC={DESC:-" + config.get("Unit", "Description")[0] + "}"
+		print "DESC=\"" + config.get("Unit", "Description")[0] + "\""
 		
 	if config.has_option("Service", "TimeoutSec"):
 		timeout = config.get("Service", "TimeoutSec")[0]
