@@ -34,7 +34,7 @@ def parser_init():
 	else:
 		print "Usage: python code.py /location/of/systemd/conf_file"
 		sys.exit(2);
-        
+		
 def check_for_file():
     try:
         conf_fd = open(sys.argv[1], 'r')
@@ -326,13 +326,12 @@ def bash_check_for_success(action, r_val=1):
 	@return: It simply prints a few statements to STDOUT. No return value.: 
 	'''
 	print "\tif [ $? -ne 0 ]; then"
-#	print "\t\techo \"Unable to " + action + " $prog\"\n\t\texit " + str(r_val)
-	print "\t\tlog_failure_msg \"Unable to " + action + " $prog\""
+	print "\t\tlog_end_msg 1"
 	print "\t\texit 1"
 	print "\tfi"
 
 	print "\tif [ $? -eq 0 ]; then"
-	print "\t\tlog_success_msg \"Successfully able to " + action + " $prog\""
+	print "\t\tlog_end_msg 0"
 	print "\tfi"
 
 	if (action == "stop"):
@@ -358,12 +357,10 @@ def timeout(action):
 			print "\twhile [ TIMEOUT -gt 0 ]; do"
 			if action == "start":
 				print "\t\tif ! /bin/kill -0 $TEMPPID ; then"
-#				print "\t\t\techo $prog started successfully\""
-				print "\t\t\tlog_success_msg \"$prog started successfully\""
+				print "\t\t\tlog_end_msg 0"
 			elif action == "stop":
 				print "\t\tif /bin/kill -0 $TEMPPID ; then"
-#				print "\t\t\techo $prog stopped successfully\""
-				print "\t\t\tlog_success_msg \"$prog stopped successfully\""
+				print "\t\t\tlog_end_msg 0"
 			print "\t\t\tbreak"
 			print "\t\tfi"
 			print "\t\tsleep 1"
@@ -377,7 +374,7 @@ def timeout(action):
 				print "\t\twhile [ TIMEOUT -gt 0 ]; do"
 				print "\t\t\tif /bin/kill -0 $TEMPPID ; then"
 		#		print "\t\t\t\techo $prog terminated successfully\""
-				print "\t\t\t\tlog_success_msg \"$prog terminated successfully\""
+				print "\t\t\t\tlog_end_msg 0"
 				print "\t\t\t\tbreak"
 				print "\t\t\tfi"
 				print "\t\t\tsleep 1"
@@ -389,7 +386,7 @@ def timeout(action):
 				print "\t\tfi"
 			else:
 		#		print "\t\techo \"Timeout error occurred trying to", action,
-				print "\t\tlog_failure_msg \"Timeout error occurred trying to",
+				print "\t\tlog_end_msg 1"
 				print action, "$prog\""
 				print "\t\texit 1"
 				print "\tfi"
@@ -398,6 +395,14 @@ def timeout(action):
 
 def build_start():
 	print "start() {\n\tlog_daemon_msg \"Starting $DESC\" \"$prog\""
+	
+	if config.has_option("Unit", "ConditionPathExists"):
+		print "\tif [ ! -s",
+		print config.get("Unit", "ConditionPathExists")[0], "]; then"
+		print "\t\tlog_end_msg 1"
+		print "\t\texit 0"
+		print "\tfi"
+	
 	if config.has_option("Service", "ExecStartPre"):
 		if len(config.get("Service", "ExecStartPre")) == 1:
 			start_pre_list = config.get("Service",
