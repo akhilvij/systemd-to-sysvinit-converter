@@ -114,13 +114,13 @@ def add_runlevels():
 	if config.has_option("Install", "WantedBy"):
 			runlevel = config.get("Install", "WantedBy")[0]
 			if runlevel == "multi-user.target":
-				print "# Default-Start:\t2 3 4"
-				print "# Default-Stop:\t0 1 6"
+				print "# Default-Start:\t2 3 4 5"
+				print "# Default-Stop:\t\t0 1 6"
 				return 4
 
 			elif runlevel == "graphical.target":
 				print "# Default-Start:\t2 3 4 5"
-				print "# Default-Stop:\t0 1 6"
+				print "# Default-Stop:\t\t0 1 6"
 				return 5
 
 # Not sure about few targets : 
@@ -189,10 +189,8 @@ def add_required_service():
 				unit == "var-lib-nfs-rpc_pipefs.mount") and remote_fs_flag:
 					required_str = required_str + "$remote_fs "
 					remote_fs_flag = False
-#		else:
-#			break
-
 	print required_str
+	print "# Required-Stop:" + required_str.split(":")[1]
 
 def add_should_service():
 	should_str = "# Should-Start:\t"
@@ -229,7 +227,8 @@ def add_should_service():
 					time_flag = False
 		else:
 			break
-	print should_str
+	if len(should_str.split("\t")[1]) != 0:
+		print should_str
 
 def check_env_file(Environment_file):
 	print "if test -f", Environment_file, "; then\n\t.", Environment_file,
@@ -329,10 +328,11 @@ def bash_check_for_success(action, r_val=1):
 	print "\t\tlog_end_msg 1"
 	print "\t\texit 1"
 	print "\tfi"
-
-	print "\tif [ $? -eq 0 ]; then"
-	print "\t\tlog_end_msg 0"
-	print "\tfi"
+    	
+	if (action != "startpre"):
+        	print "\tif [ $? -eq 0 ]; then" 
+        	print "\t\tlog_end_msg 0"   
+        	print "\tfi"
 
 	if (action == "stop"):
 		print "\tif [ \"$1\" == \"stop\" ]; then"
@@ -406,33 +406,33 @@ def build_start():
 	if config.has_option("Service", "ExecStartPre"):
 		if len(config.get("Service", "ExecStartPre")) == 1:
 			start_pre_list = config.get("Service",
-									"ExecStartPre")[0].split(';')
+									"ExecStartPre")[0].split(' ; ')
 		else:
 			start_pre_list = config.get("Service", "ExecStartPre")
 		for start_pre in start_pre_list:
 			print "\tstart_daemon", clear_dash_prefix(start_pre)
 			if start_pre[0] != "-":
-				bash_check_for_success("start")
+				bash_check_for_success("startpre")
 		
 	if config.has_option("Service", "ExecStart"):
 		start_list = config.get("Service", "ExecStart")
 		if config.has_option("Service", "Type"):
 			if config.get("Service", "Type")[0].lower() == "oneshot":
 				if len(config.get("Service", "ExecStart")) == 1:
-					start_list = config.get("Service", "ExecStart")[0].split(';')
+					start_list = config.get("Service", "ExecStart")[0].split(' ; ')
 		for exec_start in start_list:
 			if config.has_option("Service", "PIDFile"):
 				print "\tstart_daemon " + "-p $PIDFILE",
 				print clear_dash_prefix(exec_start)
 			else:
-				print "\tstart_daemon " + clear_dash_prefix(exec_start)
+				print "\tstart_daemon -p $PIDFILE", clear_dash_prefix(exec_start)
 		
 		timeout("start")
 			
 	if config.has_option("Service", "ExecStartPost"):
 		if len(config.get("Service", "ExecStartPost")) == 1:
 			start_post_list = config.get("Service",
-									"ExecStartPost")[0].split(';')
+									"ExecStartPost")[0].split(' ; ')
 		else:
 			start_post_list = config.get("Service", "ExecStartPost")
 		for start_post in start_post_list:
@@ -457,7 +457,7 @@ def build_stop():
 	if config.has_option("Service", "ExecStop"):
 		print "stop() {\n\tlog_daemon_msg \"Stopping $DESC\" \"$prog\""
 		if len(config.get("Service", "ExecStop")) == 1:
-			stop_list = config.get("Service", "ExecStop")[0].split(';')
+			stop_list = config.get("Service", "ExecStop")[0].split(' ; ')
 		else:
 			stop_list = config.get("Service", "ExecStop")
 		for exec_stop in stop_list:
@@ -475,16 +475,16 @@ def build_stop():
 		else:
 			print "stop() {\n\tlog_daemon_msg \"Stopping $DESC\" \"$prog\""
 			if config.has_option("Service", "KillSignal"):
-				print "\tkillproc -s", config.get("Service", "KillSignal")[0],
+				print "\tkillproc", config.get("Service", "KillSignal")[0],
 				print exec_path()
 			else:
-				print "\tkillproc", exec_path()
+				print "\tkillproc -p $PIDFILE", exec_path()
 				
 		timeout("stop")
 
 	if config.has_option("Service", "ExecStopPost"):
 		if len(config.get("Service", "ExecStopPost")) == 1:
-			stop_post_list = config.get("Service", "ExecStopPost")[0].split(';')
+			stop_post_list = config.get("Service", "ExecStopPost")[0].split(' ; ')
 		else:
 			stop_post_list = config.get("Service", "ExecStopPost")
 		for stop_post in stop_post_list:
@@ -511,7 +511,7 @@ def build_reload():
 	if config.has_option("Service", "ExecReload"):
 		print "reload() {\n\tlog_daemon_msg \"Reloading $DESC\" \"$prog\""
 		if len(config.get("Service", "ExecReload")) == 1:
-			reload_list = config.get("Service", "ExecReload")[0].split(';')
+			reload_list = config.get("Service", "ExecReload")[0].split(' ; ')
 		else:
 			reload_list = config.get("Service", "ExecReload")
 		for exec_reload in reload_list:
@@ -540,10 +540,12 @@ def build_default_params():
 		check_env_file(config.get("Service", "EnvironmentFile")[0]);
 
 	if config.has_option("Service", "PIDFile"):
-		print "PIDFILE={PIDFILE:-" + config.get("Service", "PIDFile")[0] + "}"
+		print "PIDFILE=" + config.get("Service", "PIDFile")[0]
+	else:
+		print "PIDFILE=/var/run/$prog.pid"
 	
 	if config.has_option("Service", "KillMode"):
-		print "SIG={SIG:-" + config.get("Service", "KillMode")[0] + "}"
+		print "SIG=" + config.get("Service", "KillMode")[0]
 	
 	if config.has_option("Unit", "Description"):
 		print "DESC=\"" + config.get("Unit", "Description")[0] + "\""
@@ -561,7 +563,7 @@ def build_call_arguments():
 	print "\tstop)\n\t\tstop\n\t\t;;"
 	print "\treload)\n\t\treload\n\t\t;;"
 	print "\tforce-reload)\n\t\tforce_reload\n\t\t;;"
-	print "\trestart)\n\t\tstop\n\tstart\n\t\t;;"
+	print "\trestart)\n\t\tstop\n\t\tstart\n\t\t;;"
 	print "\t* )\n\t\techo $\"Usage: $prog",
 	if config.has_option("Service", "ExecReload"):
 		print "{start|stop|reload|force-reload|restart}\""
