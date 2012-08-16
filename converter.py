@@ -43,11 +43,7 @@ def check_for_file():
         print err;
         sys.exit(1);
 		
-def clear_semicolon_comment(exec_str):
-	temp_str = exec_str.replace('; ', ';')			
-	return temp_str;
-
-def fix_semicolon_comment(file_str):
+def clear_semicolon_comment(file_str):
 	file_str = file_str.replace(" ; ", ";")
 	file_str = file_str.replace("; ", ";")
 	file_str = file_str.replace(" ;", ";")
@@ -71,7 +67,7 @@ def check_for_specifiers():
 	conf_list = conf_fd.readlines()
 	conf_str = ''.join(conf_list)
 	
-	conf_str = fix_semicolon_comment(conf_str)
+	conf_str = clear_semicolon_comment(conf_str)
 		
 	global template_file, instance_name, prefix_name
 	if prog.find('@') != -1:
