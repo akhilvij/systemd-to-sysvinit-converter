@@ -43,6 +43,16 @@ def check_for_file():
         print err;
         sys.exit(1);
 		
+def clear_semicolon_comment(exec_str):
+	temp_str = exec_str.replace('; ', ';')			
+	return temp_str;
+
+def fix_semicolon_comment(file_str):
+	file_str = file_str.replace(" ; ", ";")
+	file_str = file_str.replace("; ", ";")
+	file_str = file_str.replace(" ;", ";")
+	return file_str
+	
 def check_for_specifiers():
 	'''
 	Function: check_for_specifiers()
@@ -61,6 +71,8 @@ def check_for_specifiers():
 	conf_list = conf_fd.readlines()
 	conf_str = ''.join(conf_list)
 	
+	conf_str = fix_semicolon_comment(conf_str)
+		
 	global template_file, instance_name, prefix_name
 	if prog.find('@') != -1:
 		template_file = 1
@@ -432,7 +444,7 @@ def build_start():
 	if config.has_option("Service", "ExecStartPost"):
 		if len(config.get("Service", "ExecStartPost")) == 1:
 			start_post_list = config.get("Service",
-									"ExecStartPost")[0].split(' ; ')
+									"ExecStartPost")[0].split(';')
 		else:
 			start_post_list = config.get("Service", "ExecStartPost")
 		for start_post in start_post_list:
