@@ -585,7 +585,7 @@ def build_call_arguments():
 # basic call exists(even if they have no operation).
 
 parser_init()
-print "#!/bin/bash"
+print "#!/bin/sh"
 build_LSB_header()
 build_default_params()
 build_start()
