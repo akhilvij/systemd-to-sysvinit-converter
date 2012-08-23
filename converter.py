@@ -608,12 +608,6 @@ def build_default_params():
             print "STARTTIMEOUT=%s" % (config.get("Service", "TimeoutSec")[0])
 
 def build_call_arguments():
-    if config.has_option("Service", "ExecReload"):
-        exec_reload =  '{start|stop|reload|force-reload|restart}"'
-
-    else:
-        exec_reload = '{start|stop|force-reload|restart}"'
-
     print (
     'case "$1" in\n'
         '\tstart)\n'
@@ -622,19 +616,30 @@ def build_call_arguments():
         '\tstop)\n'
             '\t\tstop\n'
             '\t\t;;\n'
-        '\treload)\n'
-            '\t\treload\n'
-            '\t\t;;\n'
         '\tforce-reload)\n'
             '\t\tforce_reload\n'
             '\t\t;;\n'
         '\trestart)\n'
             '\t\tstop\n'
             '\t\tstart\n'
-            '\t\t;;\n'
-        '\t* )\n'
-            '\t\techo "$Usage: $prog %s"\n'
-    'esac') %   (exec_reload)
+            '\t\t;;\n')
+
+    if config.has_option("Service", "ExecReload"):
+        exec_reload =  '{start|stop|reload|force-reload|restart}'
+   	print ( '\treload)\n'
+           	'\t\treload\n'
+            	'\t\t;;\n'
+        	'\t*)\n'
+            	'\t\techo "$Usage: $prog %s"\n'
+		'\t\texit2\n'
+    	'esac') %   (exec_reload)
+
+    else:
+        exec_reload = '{start|stop|force-reload|restart}'
+   	print ( '\t*)\n'
+		'\t\techo "$Usage: $prog %s"\n'
+		'\t\texit 2\n'
+    	'esac') %   (exec_reload)
 
 # The build_{start,stop,reload} functions will be called irrespective of the
 # existence of Exec{Start,Stop,Reload} options. This is to ensure that all the
