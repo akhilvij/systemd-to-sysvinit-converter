@@ -363,7 +363,7 @@ def bash_check_for_success(action, r_val=1):
                '\tfi')
 
     elif action == "stop":
-        print ('\tif [ "$1" == "stop" ]; then\n'
+        print ('\tif [ "$1" = "stop" ]; then\n'
                '\t\texit 0\n'
                '\tfi')
 
